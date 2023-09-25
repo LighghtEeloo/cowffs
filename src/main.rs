@@ -5,6 +5,6 @@ fn main() {
     let Some(fsys_path) = args.next() else {
         return;
     };
-    let fsys = FileSys::read_or_create(fsys_path.into()).unwrap();
-    fsys.write().unwrap();
+    let fsys = FileSys::fs_read_or_create(fsys_path.into()).unwrap();
+    fsys.fs_write().unwrap();
 }
