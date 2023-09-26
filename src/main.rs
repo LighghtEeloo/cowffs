@@ -1,7 +1,8 @@
 use cowffs::FileSys;
 
 fn main() {
-    let mut args = std::env::args(); args.next();
+    let mut args = std::env::args();
+    args.next();
     let Some(fsys_path) = args.next() else {
         return;
     };
