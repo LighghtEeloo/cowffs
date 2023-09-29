@@ -1,12 +1,15 @@
 use crate::FileSys;
 use serde::{Deserialize, Serialize};
-use std::ops::{Index, IndexMut};
+use std::{
+    ops::{Index, IndexMut},
+    sync::{Arc, RwLock},
+};
 
-#[derive(Serialize, Deserialize, Clone, Copy)]
+#[derive(Serialize, Deserialize, Clone, Copy, Hash, PartialEq, Eq)]
 pub struct BlockId(pub(crate) usize);
 
 impl Index<BlockId> for FileSys {
-    type Output = Block;
+    type Output = Arc<RwLock<Block>>;
 
     fn index(&self, index: BlockId) -> &Self::Output {
         &self.blocks[index.0]
@@ -19,20 +22,7 @@ impl IndexMut<BlockId> for FileSys {
     }
 }
 
-// impl FileSys {
-//     pub fn fs_get_block(&self, id: BlockId) -> anyhow::Result<&Block> {
-//         self.blocks
-//             .get(id.0)
-//             .ok_or(anyhow::anyhow!("Block not found"))
-//     }
-//     pub fn fs_get_block_mut(&mut self, id: BlockId) -> anyhow::Result<&mut Block> {
-//         self.blocks
-//             .get_mut(id.0)
-//             .ok_or(anyhow::anyhow!("Block not found"))
-//     }
-// }
-
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub enum Block {
     INode(INode),
     DirEntries(Vec<Option<DirEntry>>),
@@ -60,14 +50,14 @@ impl Block {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 #[repr(u8)]
 pub enum BlockType {
     File,
     Dir,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct DirEntry {
     pub name: String,
     // pub owner: String,
@@ -78,13 +68,13 @@ pub struct DirEntry {
     pub inode: BlockId,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct INode {
     pub ref_cnt: usize,
     pub children: Vec<BlockId>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Data {
     pub data: Vec<u8>,
 }

@@ -18,26 +18,36 @@ impl<'a> FPath<'a> {
         }
     }
 }
+
+pub struct IntoIter<'a>(std::vec::IntoIter<&'a str>);
+impl<'a> Iterator for IntoIter<'a> {
+    type Item = &'a str;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.next()
+    }
+}
 impl<'a> IntoIterator for FPath<'a> {
     type Item = &'a str;
 
-    type IntoIter = std::vec::IntoIter<&'a str>;
+    type IntoIter = IntoIter<'a>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.0.into_iter()
+        IntoIter(self.0.into_iter())
     }
 }
-// pub struct Iter<'a>(std::slice::Iter<'a, &'a str>);
-// impl<'a> FPath<'a> {
-//     pub fn iter<'b: 'a>(&'b self) -> Iter<'a> {
-//         Iter(self.0.iter())
-//     }
-// }
 
-// impl<'a> Iterator for Iter<'a> {
-//     type Item = &'a str;
+pub struct Iter<'a>(std::slice::Iter<'a, &'a str>);
+impl<'a> FPath<'a> {
+    pub fn iter<'b: 'a>(&'b self) -> Iter<'a> {
+        Iter(self.0.iter())
+    }
+}
 
-//     fn next(&mut self) -> Option<Self::Item> {
-//         self.0.next().map(|p| *p)
-//     }
-// }
+impl<'a> Iterator for Iter<'a> {
+    type Item = &'a str;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.next().map(|p| *p)
+    }
+}
