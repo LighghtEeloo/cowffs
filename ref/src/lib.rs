@@ -1,5 +1,4 @@
-// use std::collections::HashMap;
-
+use std::collections::HashMap;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -42,6 +41,8 @@ pub trait IFileSystem {
     type Path: IPath;
     type Meta: IMeta;
     type Data;
+
+    fn init() -> Self;
 
     /* --------------------------- metadata operations -------------------------- */
     fn metadata(&self, path: Self::Path) -> Result<Self::Meta, FileSystemError>;
@@ -126,7 +127,8 @@ impl IPath for FsPath {
 
     fn append(mut self, raw_segment: impl AsRef<Self::Raw>) -> Result<Self, FileSystemError> {
         let segment = FileName::new(raw_segment.as_ref())?.to_string();
-        self.0.push(segment);
+        self.0.push(self.1);
+        self.1 = segment;
         Ok(self)
     }
 
@@ -146,36 +148,72 @@ impl IPath for FsPath {
     }
 }
 
-pub enum NodeType {
-    File,
-    Dir,
+pub struct Data(Vec<u8>);
+
+pub enum Node {
+    File(Data),
+    Dir(HashMap<String, Node>),
 }
 
-impl IMeta for NodeType {
+impl IMeta for Node {
     fn is_file(&self) -> bool {
-        matches!(self, Self::File)
+        matches!(self, Self::File(_))
     }
 
     fn is_dir(&self) -> bool {
-        matches!(self, Self::Dir)
+        matches!(self, Self::Dir(_))
     }
 }
 
-// pub struct Data(Vec<u8>);
+pub struct ReffFs {
+    pub root: HashMap<String, Node>,
+}
 
-// pub enum Node {
-//     File(Data),
-//     Dir(HashMap<String, Type>),
-// }
+impl IFileSystem for ReffFs {
+    type Path = FsPath;
 
-// pub struct FileSys {
-//     pub map: HashMap<String, Node>,
-// }
+    type Meta = Node;
 
-// impl FileSys {
-//     pub fn new() -> Self {
-//         let mut map = HashMap::new();
-//         map.insert("/".to_owned(), Node::Dir(HashMap::new()));
-//         FileSys { map }
-//     }
-// }
+    type Data = Data;
+
+    fn init() -> Self {
+        let root = HashMap::new();
+        Self { root }
+    }
+
+    fn metadata(&self, path: Self::Path) -> Result<Self::Meta, FileSystemError> {
+        todo!()
+    }
+
+    fn create_file(&mut self, path: Self::Path) -> Result<(), FileSystemError> {
+        todo!()
+    }
+
+    fn read_file(&self, path: Self::Path) -> Result<Self::Data, FileSystemError> {
+        todo!()
+    }
+
+    fn write_file(&mut self, path: Self::Path, data: Self::Data) -> Result<(), FileSystemError> {
+        todo!()
+    }
+
+    fn remove_file(&mut self, path: Self::Path) -> Result<(), FileSystemError> {
+        todo!()
+    }
+
+    fn create_dir(&mut self, path: Self::Path) -> Result<(), FileSystemError> {
+        todo!()
+    }
+
+    fn read_dir(&self, path: Self::Path) -> Result<Vec<Self::Path>, FileSystemError> {
+        todo!()
+    }
+
+    fn remove_dir(&mut self, path: Self::Path) -> Result<(), FileSystemError> {
+        todo!()
+    }
+
+    fn create_link(&mut self, path: Self::Path, target: Self::Path) -> Result<(), FileSystemError> {
+        todo!()
+    }
+}
