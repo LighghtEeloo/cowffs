@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt::Display};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -9,8 +9,16 @@ pub enum FileSystemError {
     EmptySegment,
     #[error("path starting without `/`")]
     PathStartingWithoutSlash,
-    #[error("path ending with `/`")]
-    PathEndingWithSlash,
+    #[error("indexing on file: `{0}`")]
+    IndexOnFile(String),
+    #[error("file `{0}` not found in directory")]
+    FileNotInDir(String),
+    #[error("cannot operate on root directory")]
+    OperateOnRoot,
+    #[error("cannot do file operation on a dir node: `{0}`")]
+    OperateFileOnDir(String),
+    #[error("cannot do dir operation on a file node: `{0}`")]
+    OperateDirOnFile(String),
 }
 
 /* -------------------------------- interface ------------------------------- */
@@ -20,15 +28,14 @@ pub trait IPath:
 {
     type Raw;
     type Segment;
-    type Iter: Iterator<Item = Self::Segment>;
+    // type Iter: Iterator<Item = Self::Segment>;
 
     /* ------------------------------ constructors ------------------------------ */
-    fn append(self, raw_segment: impl AsRef<Self::Raw>) -> Result<Self, FileSystemError>;
+    fn append(self, raw_segment: &Self::Raw) -> Result<Self, FileSystemError>;
 
     /* ------------------------------- destructors ------------------------------ */
     fn parent(self) -> Option<(Self, Self::Segment)>;
-    fn iter_parent(&self) -> Self::Iter;
-    fn iter(&self) -> Self::Iter;
+    // fn iter(&self) -> Self::Iter;
 }
 
 pub trait IMeta {
@@ -55,7 +62,7 @@ pub trait IFileSystem {
 
     /* -------------------------- directory operations -------------------------- */
     fn create_dir(&mut self, path: Self::Path) -> Result<(), FileSystemError>;
-    fn read_dir(&self, path: Self::Path) -> Result<Vec<Self::Path>, FileSystemError>;
+    fn read_dir(&self, path: Self::Path) -> Result<Vec<<Self::Path as IPath>::Segment>, FileSystemError>;
     fn remove_dir(&mut self, path: Self::Path) -> Result<(), FileSystemError>;
 
     /* ----------------------------- link operations ---------------------------- */
@@ -64,7 +71,14 @@ pub trait IFileSystem {
 
 /* ----------------------------- implementation ----------------------------- */
 
+#[derive(Clone)]
 pub struct FileName(String);
+
+impl Display for FileName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
 
 impl FileName {
     pub fn new(raw: impl AsRef<str>) -> Result<Self, FileSystemError> {
@@ -77,12 +91,21 @@ impl FileName {
         }
         Ok(Self(raw.to_owned()))
     }
-    pub fn to_string(self) -> String {
-        self.0
-    }
 }
 
-pub struct FsPath(Vec<String>, String);
+#[derive(Clone)]
+pub struct FsPath(Vec<FileName>);
+
+impl Display for FsPath {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut path = String::new();
+        for segment in &self.0 {
+            path.push('/');
+            path.push_str(&segment.to_string());
+        }
+        write!(f, "{}", path)
+    }
+}
 
 impl TryFrom<String> for FsPath {
     type Error = FileSystemError;
@@ -91,29 +114,17 @@ impl TryFrom<String> for FsPath {
         if !raw.starts_with('/') {
             Err(FileSystemError::PathStartingWithoutSlash)?
         }
-        if raw.ends_with('/') {
-            Err(FileSystemError::PathEndingWithSlash)?
-        }
-        let mut path = raw[1..]
+        let path = raw[1..]
             .split('/')
-            .map(|s| {
-                if s.is_empty() {
-                    Err(FileSystemError::EmptySegment)
-                } else {
-                    Ok(s.to_owned())
-                }
-            })
+            .map(FileName::new)
             .collect::<Result<Vec<_>, _>>()?;
-        let Some(last) = path.pop() else {
-            unreachable!()
-        };
-        Ok(Self(path, last))
+        Ok(Self(path))
     }
 }
 
 impl IntoIterator for FsPath {
-    type Item = String;
-    type IntoIter = std::vec::IntoIter<String>;
+    type Item = FileName;
+    type IntoIter = std::vec::IntoIter<FileName>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.0.into_iter()
@@ -122,13 +133,12 @@ impl IntoIterator for FsPath {
 
 impl IPath for FsPath {
     type Raw = String;
-    type Segment = String;
-    type Iter = std::vec::IntoIter<String>;
+    type Segment = FileName;
+    // type Iter = std::vec::IntoIter<String>;
 
-    fn append(mut self, raw_segment: impl AsRef<Self::Raw>) -> Result<Self, FileSystemError> {
-        let segment = FileName::new(raw_segment.as_ref())?.to_string();
-        self.0.push(self.1);
-        self.1 = segment;
+    fn append(mut self, raw_segment: &Self::Raw) -> Result<Self, FileSystemError> {
+        let segment = FileName::new(raw_segment)?;
+        self.0.push(segment);
         Ok(self)
     }
 
@@ -137,22 +147,29 @@ impl IPath for FsPath {
         Some((self, last))
     }
 
-    fn iter_parent(&self) -> Self::Iter {
-        self.0.clone().into_iter()
-    }
-
-    fn iter(&self) -> Self::Iter {
-        let mut iter = self.0.clone().into_iter();
-        iter.next_back();
-        iter
-    }
+    // fn iter(&self) -> Self::Iter {
+    //     self.0.clone().into_iter()
+    // }
 }
 
+#[derive(Clone)]
 pub struct Data(Vec<u8>);
 
+#[derive(Clone)]
 pub enum Node {
     File(Data),
     Dir(HashMap<String, Node>),
+}
+
+impl Node {
+    pub fn child_node(&self, name: FileName) -> Result<&Self, FileSystemError> {
+        match self {
+            Self::File(_) => Err(FileSystemError::IndexOnFile(name.to_string())),
+            Self::Dir(children) => children
+                .get(&name.to_string())
+                .ok_or(FileSystemError::FileNotInDir(name.to_string())),
+        }
+    }
 }
 
 impl IMeta for Node {
@@ -169,6 +186,31 @@ pub struct ReffFs {
     pub root: HashMap<String, Node>,
 }
 
+impl ReffFs {
+    pub fn traverse(&self, path: FsPath) -> Result<Node, FileSystemError> {
+        let mut dir = Node::Dir(self.root.clone());
+        for segment in path {
+            dir = dir.child_node(segment)?.clone();
+        }
+        Ok(dir.clone())
+    }
+    pub fn traverse_mut(
+        &mut self, path: FsPath,
+    ) -> Result<&mut HashMap<String, Node>, FileSystemError> {
+        let mut dir = &mut self.root;
+        for segment in path {
+            dir = match dir
+                .get_mut(&segment.to_string())
+                .ok_or(FileSystemError::FileNotInDir(segment.to_string()))?
+            {
+                Node::File(_) => Err(FileSystemError::IndexOnFile(segment.to_string()))?,
+                Node::Dir(children) => children,
+            }
+        }
+        Ok(dir)
+    }
+}
+
 impl IFileSystem for ReffFs {
     type Path = FsPath;
 
@@ -182,38 +224,98 @@ impl IFileSystem for ReffFs {
     }
 
     fn metadata(&self, path: Self::Path) -> Result<Self::Meta, FileSystemError> {
-        todo!()
+        self.traverse(path)
     }
 
     fn create_file(&mut self, path: Self::Path) -> Result<(), FileSystemError> {
-        todo!()
+        let (parent, name) = path.parent().ok_or(FileSystemError::OperateOnRoot)?;
+        let dir = self.traverse_mut(parent)?;
+        dir.insert(name.to_string(), Node::File(Data(vec![])));
+        Ok(())
     }
 
     fn read_file(&self, path: Self::Path) -> Result<Self::Data, FileSystemError> {
-        todo!()
+        let node = self.traverse(path.clone())?;
+        match node {
+            Node::File(data) => Ok(data),
+            Node::Dir(_) => Err(FileSystemError::OperateFileOnDir(path.to_string())),
+        }
     }
 
     fn write_file(&mut self, path: Self::Path, data: Self::Data) -> Result<(), FileSystemError> {
-        todo!()
+        let (parent, name) = path
+            .clone()
+            .parent()
+            .ok_or(FileSystemError::OperateOnRoot)?;
+        let dir = self.traverse_mut(parent)?;
+        let node = dir
+            .get_mut(&name.to_string())
+            .ok_or(FileSystemError::FileNotInDir(name.to_string()))?;
+        match node {
+            Node::File(fdata) => *fdata = data.clone(),
+            Node::Dir(_) => Err(FileSystemError::OperateFileOnDir(path.to_string()))?,
+        }
+        Ok(())
     }
 
     fn remove_file(&mut self, path: Self::Path) -> Result<(), FileSystemError> {
-        todo!()
+        let (parent, name) = path
+            .clone()
+            .parent()
+            .ok_or(FileSystemError::OperateOnRoot)?;
+        let dir = self.traverse_mut(parent)?;
+        let node = dir
+            .get_mut(&name.to_string())
+            .ok_or(FileSystemError::FileNotInDir(name.to_string()))?;
+        match node {
+            Node::File(_) => {
+                dir.remove(&name.to_string());
+            }
+            Node::Dir(_) => Err(FileSystemError::OperateFileOnDir(path.to_string()))?,
+        }
+        Ok(())
     }
 
     fn create_dir(&mut self, path: Self::Path) -> Result<(), FileSystemError> {
-        todo!()
+        let (parent, name) = path.parent().ok_or(FileSystemError::OperateOnRoot)?;
+        let dir = self.traverse_mut(parent)?;
+        dir.insert(name.to_string(), Node::Dir(HashMap::new()));
+        Ok(())
     }
 
-    fn read_dir(&self, path: Self::Path) -> Result<Vec<Self::Path>, FileSystemError> {
-        todo!()
+    fn read_dir(&self, path: Self::Path) -> Result<Vec<FileName>, FileSystemError> {
+        let node = self.traverse(path.clone())?;
+        match node {
+            Node::File(_) => Err(FileSystemError::OperateFileOnDir(path.to_string())),
+            Node::Dir(children) => children
+                .into_iter()
+                .map(|(name, _)| FileName::new(name))
+                .collect(),
+        }
     }
 
     fn remove_dir(&mut self, path: Self::Path) -> Result<(), FileSystemError> {
-        todo!()
+        let (parent, name) = path
+            .clone()
+            .parent()
+            .ok_or(FileSystemError::OperateOnRoot)?;
+        let dir = self.traverse_mut(parent)?;
+        let node = dir
+            .get_mut(&name.to_string())
+            .ok_or(FileSystemError::FileNotInDir(name.to_string()))?;
+        match node {
+            Node::File(_) => Err(FileSystemError::OperateFileOnDir(path.to_string()))?,
+            Node::Dir(children) => {
+                if !children.is_empty() {
+                    Err(FileSystemError::OperateDirOnFile(path.to_string()))?
+                }
+                dir.remove(&name.to_string());
+            }
+        }
+        Ok(())
     }
 
-    fn create_link(&mut self, path: Self::Path, target: Self::Path) -> Result<(), FileSystemError> {
+    fn create_link(&mut self, _path: Self::Path, _target: Self::Path) -> Result<(), FileSystemError> {
         todo!()
     }
 }
