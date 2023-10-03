@@ -25,7 +25,7 @@ pub enum FileSystemError<P: Display> {
 
 /* -------------------------------- interface ------------------------------- */
 
-pub trait IPath:
+pub trait IPath<'p>:
     Sized
     + TryFrom<Self::Raw, Error = FileSystemError<Self>>
     + IntoIterator<Item = Self::Segment>
@@ -33,14 +33,14 @@ pub trait IPath:
 {
     type Raw;
     type Segment;
-    // type Iter: Iterator<Item = Self::Segment>;
+    type Iter;
 
     /* ------------------------------ constructors ------------------------------ */
     fn append(self, raw_segment: &Self::Raw) -> Result<Self, FileSystemError<Self>>;
 
     /* ------------------------------- destructors ------------------------------ */
     fn parent(self) -> Option<(Self, Self::Segment)>;
-    // fn iter(&self) -> Self::Iter;
+    fn iter<'it: 'p>(&'it self) -> Self::Iter;
 }
 
 pub trait IMeta {
@@ -49,36 +49,43 @@ pub trait IMeta {
     fn is_dir(&self) -> bool;
 }
 
-pub trait IFileSystem {
-    type Path: IPath;
+pub trait IFileSystem<'fs> {
+    type Path<'p>: IPath<'p>;
     type Meta: IMeta;
     type Data;
 
     fn init() -> Self;
 
     /* --------------------------- metadata operations -------------------------- */
-    fn metadata(&self, path: Self::Path) -> Result<Self::Meta, FileSystemError<Self::Path>>;
+    fn metadata(
+        &self, path: Self::Path<'fs>,
+    ) -> Result<Self::Meta, FileSystemError<Self::Path<'fs>>>;
 
     /* ----------------------------- file operations ---------------------------- */
-    fn create_file(&mut self, path: Self::Path) -> Result<(), FileSystemError<Self::Path>>;
-    fn read_file(&self, path: Self::Path) -> Result<Self::Data, FileSystemError<Self::Path>>;
+    fn create_file(
+        &mut self, path: Self::Path<'fs>,
+    ) -> Result<(), FileSystemError<Self::Path<'fs>>>;
+    fn read_file(
+        &self, path: Self::Path<'fs>,
+    ) -> Result<Self::Data, FileSystemError<Self::Path<'fs>>>;
     fn write_file(
-        &mut self, path: Self::Path, data: Self::Data,
-    ) -> Result<(), FileSystemError<Self::Path>>;
+        &mut self, path: Self::Path<'fs>, data: Self::Data,
+    ) -> Result<(), FileSystemError<Self::Path<'fs>>>;
 
     /* -------------------------- directory operations -------------------------- */
-    fn create_dir(&mut self, path: Self::Path) -> Result<(), FileSystemError<Self::Path>>;
+    fn create_dir(&mut self, path: Self::Path<'fs>)
+        -> Result<(), FileSystemError<Self::Path<'fs>>>;
     fn read_dir(
-        &self, path: Self::Path,
-    ) -> Result<Vec<<Self::Path as IPath>::Segment>, FileSystemError<Self::Path>>;
+        &self, path: Self::Path<'fs>,
+    ) -> Result<Vec<<Self::Path<'fs> as IPath<'fs>>::Segment>, FileSystemError<Self::Path<'fs>>>;
 
     /* ----------------------------- remove operations --------------------------- */
-    fn remove(&mut self, path: Self::Path) -> Result<(), FileSystemError<Self::Path>>;
+    fn remove(&mut self, path: Self::Path<'fs>) -> Result<(), FileSystemError<Self::Path<'fs>>>;
 
     /* ----------------------------- link operations ---------------------------- */
     fn create_link(
-        &mut self, path: Self::Path, target: Self::Path,
-    ) -> Result<(), FileSystemError<Self::Path>>;
+        &mut self, path: Self::Path<'fs>, target: Self::Path<'fs>,
+    ) -> Result<(), FileSystemError<Self::Path<'fs>>>;
 }
 
 /* ----------------------------- implementation ----------------------------- */
@@ -145,10 +152,10 @@ impl IntoIterator for FsPath {
     }
 }
 
-impl IPath for FsPath {
+impl<'p> IPath<'p> for FsPath {
     type Raw = String;
     type Segment = FileName;
-    // type Iter = std::vec::IntoIter<String>;
+    type Iter = std::slice::Iter<'p, FileName>;
 
     fn append(mut self, raw_segment: &Self::Raw) -> Result<Self, ReffFsError> {
         let segment = FileName::new(raw_segment)?;
@@ -161,9 +168,9 @@ impl IPath for FsPath {
         Some((self, last))
     }
 
-    // fn iter(&self) -> Self::Iter {
-    //     self.0.clone().into_iter()
-    // }
+    fn iter<'it: 'p>(&'it self) -> Self::Iter {
+        self.0.iter()
+    }
 }
 
 #[derive(Clone)]
@@ -274,8 +281,8 @@ impl ReffFs {
     }
 }
 
-impl IFileSystem for ReffFs {
-    type Path = FsPath;
+impl<'fs> IFileSystem<'fs> for ReffFs {
+    type Path<'p> = FsPath;
 
     type Meta = Node;
 
@@ -287,11 +294,11 @@ impl IFileSystem for ReffFs {
         Self { nodes, root }
     }
 
-    fn metadata(&self, path: Self::Path) -> Result<Self::Meta, ReffFsError> {
+    fn metadata(&self, path: Self::Path<'fs>) -> Result<Self::Meta, ReffFsError> {
         self.traverse(path).cloned()
     }
 
-    fn create_file(&mut self, path: Self::Path) -> Result<(), ReffFsError> {
+    fn create_file(&mut self, path: Self::Path<'fs>) -> Result<(), ReffFsError> {
         let (parent, name) = path.parent().ok_or(FileSystemError::OperateOnRoot)?;
         let new_file = self.fresh(Node::with_inner(NodeInner::File(Data(vec![]))));
         let dir = self.traverse_dir_mut(parent)?;
@@ -299,12 +306,12 @@ impl IFileSystem for ReffFs {
         Ok(())
     }
 
-    fn read_file(&self, path: Self::Path) -> Result<Self::Data, ReffFsError> {
+    fn read_file(&self, path: Self::Path<'fs>) -> Result<Self::Data, ReffFsError> {
         let node = self.traverse(path.clone())?;
         node.file(path.clone()).cloned()
     }
 
-    fn write_file(&mut self, path: Self::Path, data: Self::Data) -> Result<(), ReffFsError> {
+    fn write_file(&mut self, path: Self::Path<'fs>, data: Self::Data) -> Result<(), ReffFsError> {
         let (parent, name) = path
             .clone()
             .parent()
@@ -318,7 +325,7 @@ impl IFileSystem for ReffFs {
         Ok(())
     }
 
-    fn create_dir(&mut self, path: Self::Path) -> Result<(), ReffFsError> {
+    fn create_dir(&mut self, path: Self::Path<'fs>) -> Result<(), ReffFsError> {
         let (parent, name) = path.parent().ok_or(FileSystemError::OperateOnRoot)?;
         let new_dir = self.fresh(Node::with_inner(NodeInner::Dir(HashMap::new())));
         let dir = self.traverse_dir_mut(parent)?;
@@ -326,7 +333,7 @@ impl IFileSystem for ReffFs {
         Ok(())
     }
 
-    fn read_dir(&self, path: Self::Path) -> Result<Vec<FileName>, ReffFsError> {
+    fn read_dir(&self, path: Self::Path<'fs>) -> Result<Vec<FileName>, ReffFsError> {
         let node = self.traverse(path.clone())?;
         let children = node.dir(path.clone())?;
         children
@@ -335,7 +342,7 @@ impl IFileSystem for ReffFs {
             .collect()
     }
 
-    fn remove(&mut self, path: Self::Path) -> Result<(), ReffFsError> {
+    fn remove(&mut self, path: Self::Path<'fs>) -> Result<(), ReffFsError> {
         let (parent, name) = path
             .clone()
             .parent()
@@ -352,7 +359,9 @@ impl IFileSystem for ReffFs {
         Ok(())
     }
 
-    fn create_link(&mut self, path: Self::Path, target: Self::Path) -> Result<(), ReffFsError> {
+    fn create_link(
+        &mut self, path: Self::Path<'fs>, target: Self::Path<'fs>,
+    ) -> Result<(), ReffFsError> {
         let target = self.traverse_id(target)?;
         let (parent, name) = path
             .clone()
