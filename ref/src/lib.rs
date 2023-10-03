@@ -10,23 +10,23 @@ pub enum FileSystemError {
     #[error("path starting without `/`")]
     PathStartingWithoutSlash,
     #[error("indexing on file: `{0}`")]
-    IndexOnFile(String),
+    IndexOnFile(FsPath),
     #[error("file `{0}` not found in directory")]
-    FileNotInDir(String),
+    FileNotInDir(FsPath),
     #[error("cannot operate on root directory")]
     OperateOnRoot,
     #[error("cannot do file operation on a dir node: `{0}`")]
-    OperateFileOnDir(String),
+    OperateFileOnDir(FsPath),
     #[error("cannot do dir operation on a file node: `{0}`")]
-    OperateDirOnFile(String),
+    OperateDirOnFile(FsPath),
     #[error("cannot remove non-empty directory: `{0}`")]
-    RemoveNonEmptyDir(String),
+    RemoveNonEmptyDir(FsPath),
 }
 
 /* -------------------------------- interface ------------------------------- */
 
 pub trait IPath:
-    TryFrom<Self::Raw, Error = FileSystemError> + IntoIterator<Item = Self::Segment> + Sized
+    Sized + TryFrom<Self::Raw, Error = FileSystemError> + IntoIterator<Item = Self::Segment> + Display
 {
     type Raw;
     type Segment;
@@ -76,7 +76,7 @@ pub trait IFileSystem {
 
 /* ----------------------------- implementation ----------------------------- */
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct FileName(String);
 
 impl Display for FileName {
@@ -98,7 +98,7 @@ impl FileName {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct FsPath(Vec<FileName>);
 
 impl Display for FsPath {
@@ -183,7 +183,7 @@ impl Node {
     }
     pub fn dir(&self, path: FsPath) -> Result<&HashMap<String, NodeId>, FileSystemError> {
         match &self.inner {
-            NodeInner::File(_) => Err(FileSystemError::IndexOnFile(path.to_string())),
+            NodeInner::File(_) => Err(FileSystemError::IndexOnFile(path)),
             NodeInner::Dir(children) => Ok(children),
         }
     }
@@ -191,20 +191,20 @@ impl Node {
         &mut self, path: FsPath,
     ) -> Result<&mut HashMap<String, NodeId>, FileSystemError> {
         match &mut self.inner {
-            NodeInner::File(_) => Err(FileSystemError::IndexOnFile(path.to_string())),
+            NodeInner::File(_) => Err(FileSystemError::IndexOnFile(path)),
             NodeInner::Dir(children) => Ok(children),
         }
     }
     pub fn file(&self, path: FsPath) -> Result<&Data, FileSystemError> {
         match &self.inner {
             NodeInner::File(data) => Ok(data),
-            NodeInner::Dir(_) => Err(FileSystemError::OperateDirOnFile(path.to_string())),
+            NodeInner::Dir(_) => Err(FileSystemError::OperateDirOnFile(path)),
         }
     }
     pub fn file_mut(&mut self, path: FsPath) -> Result<&mut Data, FileSystemError> {
         match &mut self.inner {
             NodeInner::File(data) => Ok(data),
-            NodeInner::Dir(_) => Err(FileSystemError::OperateDirOnFile(path.to_string())),
+            NodeInner::Dir(_) => Err(FileSystemError::OperateDirOnFile(path)),
         }
     }
 }
@@ -255,7 +255,7 @@ impl ReffFs {
             let next = *self[dir]
                 .dir(path.clone())?
                 .get(&segment.to_string())
-                .ok_or(FileSystemError::FileNotInDir(segment.to_string()))?;
+                .ok_or(FileSystemError::FileNotInDir(path.clone()))?;
             dir = next;
         }
         Ok(dir)
@@ -305,7 +305,7 @@ impl IFileSystem for ReffFs {
         let dir = self.traverse_dir_mut(parent)?;
         let node = *dir
             .get_mut(&name.to_string())
-            .ok_or(FileSystemError::FileNotInDir(name.to_string()))?;
+            .ok_or(FileSystemError::FileNotInDir(path.clone()))?;
         let fdata = self[node].file_mut(path.clone())?;
         *fdata = data.clone();
         Ok(())
@@ -337,9 +337,9 @@ impl IFileSystem for ReffFs {
         let node = *self[dir]
             .dir(path.clone())?
             .get(&name.to_string())
-            .ok_or(FileSystemError::FileNotInDir(name.to_string()))?;
+            .ok_or(FileSystemError::FileNotInDir(path.clone()))?;
         if !self[node].dir(path.clone())?.is_empty() {
-            Err(FileSystemError::RemoveNonEmptyDir(name.to_string()))?
+            Err(FileSystemError::RemoveNonEmptyDir(path.clone()))?
         }
         self[dir].dir_mut(path.clone())?.remove(&name.to_string());
         Ok(())
