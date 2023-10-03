@@ -2,7 +2,7 @@ use std::{collections::HashMap, fmt::Display};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
-pub enum FileSystemError {
+pub enum FileSystemError<P: Display> {
     #[error("invalid path segment: `{0}`")]
     InvalidSegment(String),
     #[error("empty path segment")]
@@ -10,30 +10,33 @@ pub enum FileSystemError {
     #[error("path starting without `/`")]
     PathStartingWithoutSlash,
     #[error("indexing on file: `{0}`")]
-    IndexOnFile(FsPath),
+    IndexOnFile(P),
     #[error("file `{0}` not found in directory")]
-    FileNotInDir(FsPath),
+    FileNotInDir(P),
     #[error("cannot operate on root directory")]
     OperateOnRoot,
     #[error("cannot do file operation on a dir node: `{0}`")]
-    OperateFileOnDir(FsPath),
+    OperateFileOnDir(P),
     #[error("cannot do dir operation on a file node: `{0}`")]
-    OperateDirOnFile(FsPath),
+    OperateDirOnFile(P),
     #[error("cannot remove non-empty directory: `{0}`")]
-    RemoveNonEmptyDir(FsPath),
+    RemoveNonEmptyDir(P),
 }
 
 /* -------------------------------- interface ------------------------------- */
 
 pub trait IPath:
-    Sized + TryFrom<Self::Raw, Error = FileSystemError> + IntoIterator<Item = Self::Segment> + Display
+    Sized
+    + TryFrom<Self::Raw, Error = FileSystemError<Self>>
+    + IntoIterator<Item = Self::Segment>
+    + Display
 {
     type Raw;
     type Segment;
     // type Iter: Iterator<Item = Self::Segment>;
 
     /* ------------------------------ constructors ------------------------------ */
-    fn append(self, raw_segment: &Self::Raw) -> Result<Self, FileSystemError>;
+    fn append(self, raw_segment: &Self::Raw) -> Result<Self, FileSystemError<Self>>;
 
     /* ------------------------------- destructors ------------------------------ */
     fn parent(self) -> Option<(Self, Self::Segment)>;
@@ -54,27 +57,33 @@ pub trait IFileSystem {
     fn init() -> Self;
 
     /* --------------------------- metadata operations -------------------------- */
-    fn metadata(&self, path: Self::Path) -> Result<Self::Meta, FileSystemError>;
+    fn metadata(&self, path: Self::Path) -> Result<Self::Meta, FileSystemError<Self::Path>>;
 
     /* ----------------------------- file operations ---------------------------- */
-    fn create_file(&mut self, path: Self::Path) -> Result<(), FileSystemError>;
-    fn read_file(&self, path: Self::Path) -> Result<Self::Data, FileSystemError>;
-    fn write_file(&mut self, path: Self::Path, data: Self::Data) -> Result<(), FileSystemError>;
+    fn create_file(&mut self, path: Self::Path) -> Result<(), FileSystemError<Self::Path>>;
+    fn read_file(&self, path: Self::Path) -> Result<Self::Data, FileSystemError<Self::Path>>;
+    fn write_file(
+        &mut self, path: Self::Path, data: Self::Data,
+    ) -> Result<(), FileSystemError<Self::Path>>;
 
     /* -------------------------- directory operations -------------------------- */
-    fn create_dir(&mut self, path: Self::Path) -> Result<(), FileSystemError>;
+    fn create_dir(&mut self, path: Self::Path) -> Result<(), FileSystemError<Self::Path>>;
     fn read_dir(
         &self, path: Self::Path,
-    ) -> Result<Vec<<Self::Path as IPath>::Segment>, FileSystemError>;
+    ) -> Result<Vec<<Self::Path as IPath>::Segment>, FileSystemError<Self::Path>>;
 
     /* ----------------------------- remove operations --------------------------- */
-    fn remove(&mut self, path: Self::Path) -> Result<(), FileSystemError>;
+    fn remove(&mut self, path: Self::Path) -> Result<(), FileSystemError<Self::Path>>;
 
     /* ----------------------------- link operations ---------------------------- */
-    fn create_link(&mut self, path: Self::Path, target: Self::Path) -> Result<(), FileSystemError>;
+    fn create_link(
+        &mut self, path: Self::Path, target: Self::Path,
+    ) -> Result<(), FileSystemError<Self::Path>>;
 }
 
 /* ----------------------------- implementation ----------------------------- */
+
+type ReffFsError = FileSystemError<FsPath>;
 
 #[derive(Clone, Debug)]
 pub struct FileName(String);
@@ -86,7 +95,7 @@ impl Display for FileName {
 }
 
 impl FileName {
-    pub fn new(raw: impl AsRef<str>) -> Result<Self, FileSystemError> {
+    pub fn new(raw: impl AsRef<str>) -> Result<Self, ReffFsError> {
         let raw = raw.as_ref();
         if raw.is_empty() {
             Err(FileSystemError::EmptySegment)?
@@ -113,7 +122,7 @@ impl Display for FsPath {
 }
 
 impl TryFrom<String> for FsPath {
-    type Error = FileSystemError;
+    type Error = FileSystemError<Self>;
 
     fn try_from(raw: String) -> Result<Self, Self::Error> {
         if !raw.starts_with('/') {
@@ -141,7 +150,7 @@ impl IPath for FsPath {
     type Segment = FileName;
     // type Iter = std::vec::IntoIter<String>;
 
-    fn append(mut self, raw_segment: &Self::Raw) -> Result<Self, FileSystemError> {
+    fn append(mut self, raw_segment: &Self::Raw) -> Result<Self, ReffFsError> {
         let segment = FileName::new(raw_segment)?;
         self.0.push(segment);
         Ok(self)
@@ -181,27 +190,25 @@ impl Node {
             inner,
         }
     }
-    pub fn dir(&self, path: FsPath) -> Result<&HashMap<String, NodeId>, FileSystemError> {
+    pub fn dir(&self, path: FsPath) -> Result<&HashMap<String, NodeId>, ReffFsError> {
         match &self.inner {
             NodeInner::File(_) => Err(FileSystemError::IndexOnFile(path)),
             NodeInner::Dir(children) => Ok(children),
         }
     }
-    pub fn dir_mut(
-        &mut self, path: FsPath,
-    ) -> Result<&mut HashMap<String, NodeId>, FileSystemError> {
+    pub fn dir_mut(&mut self, path: FsPath) -> Result<&mut HashMap<String, NodeId>, ReffFsError> {
         match &mut self.inner {
             NodeInner::File(_) => Err(FileSystemError::IndexOnFile(path)),
             NodeInner::Dir(children) => Ok(children),
         }
     }
-    pub fn file(&self, path: FsPath) -> Result<&Data, FileSystemError> {
+    pub fn file(&self, path: FsPath) -> Result<&Data, ReffFsError> {
         match &self.inner {
             NodeInner::File(data) => Ok(data),
             NodeInner::Dir(_) => Err(FileSystemError::OperateDirOnFile(path)),
         }
     }
-    pub fn file_mut(&mut self, path: FsPath) -> Result<&mut Data, FileSystemError> {
+    pub fn file_mut(&mut self, path: FsPath) -> Result<&mut Data, ReffFsError> {
         match &mut self.inner {
             NodeInner::File(data) => Ok(data),
             NodeInner::Dir(_) => Err(FileSystemError::OperateDirOnFile(path)),
@@ -239,17 +246,17 @@ impl std::ops::IndexMut<NodeId> for ReffFs {
 }
 
 impl ReffFs {
-    pub fn traverse(&self, path: FsPath) -> Result<&Node, FileSystemError> {
+    pub fn traverse(&self, path: FsPath) -> Result<&Node, ReffFsError> {
         let node = self.traverse_id(path)?;
         Ok(&self[node])
     }
     pub fn traverse_dir_mut(
         &mut self, path: FsPath,
-    ) -> Result<&mut HashMap<String, NodeId>, FileSystemError> {
+    ) -> Result<&mut HashMap<String, NodeId>, ReffFsError> {
         let dir = self.traverse_id(path.clone())?;
         Ok(self[dir].dir_mut(path.clone())?)
     }
-    pub fn traverse_id(&self, path: FsPath) -> Result<NodeId, FileSystemError> {
+    pub fn traverse_id(&self, path: FsPath) -> Result<NodeId, ReffFsError> {
         let mut dir = self.root;
         for segment in path.clone() {
             let next = *self[dir]
@@ -280,11 +287,11 @@ impl IFileSystem for ReffFs {
         Self { nodes, root }
     }
 
-    fn metadata(&self, path: Self::Path) -> Result<Self::Meta, FileSystemError> {
+    fn metadata(&self, path: Self::Path) -> Result<Self::Meta, ReffFsError> {
         self.traverse(path).cloned()
     }
 
-    fn create_file(&mut self, path: Self::Path) -> Result<(), FileSystemError> {
+    fn create_file(&mut self, path: Self::Path) -> Result<(), ReffFsError> {
         let (parent, name) = path.parent().ok_or(FileSystemError::OperateOnRoot)?;
         let new_file = self.fresh(Node::with_inner(NodeInner::File(Data(vec![]))));
         let dir = self.traverse_dir_mut(parent)?;
@@ -292,12 +299,12 @@ impl IFileSystem for ReffFs {
         Ok(())
     }
 
-    fn read_file(&self, path: Self::Path) -> Result<Self::Data, FileSystemError> {
+    fn read_file(&self, path: Self::Path) -> Result<Self::Data, ReffFsError> {
         let node = self.traverse(path.clone())?;
         node.file(path.clone()).cloned()
     }
 
-    fn write_file(&mut self, path: Self::Path, data: Self::Data) -> Result<(), FileSystemError> {
+    fn write_file(&mut self, path: Self::Path, data: Self::Data) -> Result<(), ReffFsError> {
         let (parent, name) = path
             .clone()
             .parent()
@@ -311,7 +318,7 @@ impl IFileSystem for ReffFs {
         Ok(())
     }
 
-    fn create_dir(&mut self, path: Self::Path) -> Result<(), FileSystemError> {
+    fn create_dir(&mut self, path: Self::Path) -> Result<(), ReffFsError> {
         let (parent, name) = path.parent().ok_or(FileSystemError::OperateOnRoot)?;
         let new_dir = self.fresh(Node::with_inner(NodeInner::Dir(HashMap::new())));
         let dir = self.traverse_dir_mut(parent)?;
@@ -319,7 +326,7 @@ impl IFileSystem for ReffFs {
         Ok(())
     }
 
-    fn read_dir(&self, path: Self::Path) -> Result<Vec<FileName>, FileSystemError> {
+    fn read_dir(&self, path: Self::Path) -> Result<Vec<FileName>, ReffFsError> {
         let node = self.traverse(path.clone())?;
         let children = node.dir(path.clone())?;
         children
@@ -328,7 +335,7 @@ impl IFileSystem for ReffFs {
             .collect()
     }
 
-    fn remove(&mut self, path: Self::Path) -> Result<(), FileSystemError> {
+    fn remove(&mut self, path: Self::Path) -> Result<(), ReffFsError> {
         let (parent, name) = path
             .clone()
             .parent()
@@ -345,7 +352,7 @@ impl IFileSystem for ReffFs {
         Ok(())
     }
 
-    fn create_link(&mut self, path: Self::Path, target: Self::Path) -> Result<(), FileSystemError> {
+    fn create_link(&mut self, path: Self::Path, target: Self::Path) -> Result<(), ReffFsError> {
         let target = self.traverse_id(target)?;
         let (parent, name) = path
             .clone()
