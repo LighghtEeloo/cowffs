@@ -300,24 +300,6 @@ impl IFileSystem for ReffFs {
         Ok(())
     }
 
-    // fn remove_file(&mut self, path: Self::Path) -> Result<(), FileSystemError> {
-    //     let (parent, name) = path
-    //         .clone()
-    //         .parent()
-    //         .ok_or(FileSystemError::OperateOnRoot)?;
-    //     let dir = self.traverse_mut(parent)?;
-    //     let node = *dir
-    //         .get_mut(&name.to_string())
-    //         .ok_or(FileSystemError::FileNotInDir(name.to_string()))?;
-    //     match &mut self[node] {
-    //         Node::File(_) => {
-    //             dir.remove(&name.to_string());
-    //         }
-    //         Node::Dir(_) => Err(FileSystemError::OperateFileOnDir(path.to_string()))?,
-    //     }
-    //     Ok(())
-    // }
-
     fn create_dir(&mut self, path: Self::Path) -> Result<(), FileSystemError> {
         let (parent, name) = path.parent().ok_or(FileSystemError::OperateOnRoot)?;
         let new_dir = self.fresh(Node::Dir(HashMap::new()));
@@ -335,24 +317,25 @@ impl IFileSystem for ReffFs {
             .collect()
     }
 
-    fn remove(&mut self, _path: Self::Path) -> Result<(), FileSystemError> {
-        // let (parent, name) = path
-        //     .clone()
-        //     .parent()
-        //     .ok_or(FileSystemError::OperateOnRoot)?;
-        // let dir = self.traverse(parent)?.dir(path.clone())?;
-        // let node = *dir
-        //     .get(&name.to_string())
-        //     .ok_or(FileSystemError::FileNotInDir(name.to_string()))?;
-        // match &self[node] {
-        //     Node::File(_) => Err(FileSystemError::OperateFileOnDir(path.to_string()))?,
-        //     Node::Dir(children) => {
-        //         if !children.is_empty() {
-        //             Err(FileSystemError::OperateDirOnFile(path.to_string()))?
-        //         }
-        //         dir.remove(&name.to_string());
-        //     }
-        // }
+    fn remove(&mut self, path: Self::Path) -> Result<(), FileSystemError> {
+        let (parent, name) = path
+            .clone()
+            .parent()
+            .ok_or(FileSystemError::OperateOnRoot)?;
+        let dir = self.traverse_id(parent)?;
+        let node = *self[dir]
+            .dir(path.clone())?
+            .get(&name.to_string())
+            .ok_or(FileSystemError::FileNotInDir(name.to_string()))?;
+        match &self[node] {
+            Node::File(_) => Err(FileSystemError::OperateFileOnDir(path.to_string()))?,
+            Node::Dir(children) => {
+                if !children.is_empty() {
+                    Err(FileSystemError::OperateDirOnFile(path.to_string()))?
+                }
+                self[dir].dir_mut(path.clone())?.remove(&name.to_string());
+            }
+        }
         Ok(())
     }
 
