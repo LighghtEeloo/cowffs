@@ -32,15 +32,15 @@ pub trait IPath<'p>:
     + Display
 {
     type Raw;
-    type Segment;
-    type Iter;
+    type Segment: 'p;
+    type Iter: Iterator<Item = &'p Self::Segment>;
 
     /* ------------------------------ constructors ------------------------------ */
     fn append(self, raw_segment: &Self::Raw) -> Result<Self, FileSystemError<Self>>;
 
     /* ------------------------------- destructors ------------------------------ */
     fn parent(self) -> Option<(Self, Self::Segment)>;
-    fn iter<'it: 'p>(&'it self) -> Self::Iter;
+    fn iter(&'p self) -> Self::Iter;
 }
 
 pub trait IMeta {
@@ -168,7 +168,7 @@ impl<'p> IPath<'p> for FsPath {
         Some((self, last))
     }
 
-    fn iter<'it: 'p>(&'it self) -> Self::Iter {
+    fn iter(&'p self) -> Self::Iter {
         self.0.iter()
     }
 }
