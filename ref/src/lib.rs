@@ -121,8 +121,11 @@ impl Display for FsPath {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut path = String::new();
         for segment in &self.0 {
-            path.push('/');
-            path.push_str(&segment.to_string());
+            path += "/";
+            path += &segment.to_string();
+        }
+        if path.is_empty() {
+            path += "/";
         }
         write!(f, "{}", path)
     }
