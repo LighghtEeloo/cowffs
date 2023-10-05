@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 pub mod view;
 pub mod block;
 pub mod stepper;

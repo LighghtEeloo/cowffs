@@ -79,13 +79,13 @@ pub trait IFileSystem<'fs> {
         &self, path: Self::Path<'fs>,
     ) -> Result<Vec<<Self::Path<'fs> as IPath<'fs>>::Segment>, FileSystemError<Self::Path<'fs>>>;
 
-    /* ----------------------------- remove operations --------------------------- */
-    fn remove(&mut self, path: Self::Path<'fs>) -> Result<(), FileSystemError<Self::Path<'fs>>>;
-
     /* ----------------------------- link operations ---------------------------- */
     fn create_link(
         &mut self, path: Self::Path<'fs>, target: Self::Path<'fs>,
     ) -> Result<(), FileSystemError<Self::Path<'fs>>>;
+
+    /* ----------------------------- remove operations --------------------------- */
+    fn remove(&mut self, path: Self::Path<'fs>) -> Result<(), FileSystemError<Self::Path<'fs>>>;
 }
 
 /* ----------------------------- implementation ----------------------------- */
@@ -264,15 +264,15 @@ impl ReffFs {
         Ok(self[dir].dir_mut(path.clone())?)
     }
     pub fn traverse_id(&self, path: FsPath) -> Result<NodeId, ReffFsError> {
-        let mut dir = self.root;
+        let mut current = self.root;
         for segment in path.clone() {
-            let next = *self[dir]
+            let next = *self[current]
                 .dir(path.clone())?
                 .get(&segment.to_string())
                 .ok_or(FileSystemError::FileNotInDir(path.clone()))?;
-            dir = next;
+            current = next;
         }
-        Ok(dir)
+        Ok(current)
     }
     pub fn fresh(&mut self, node: Node) -> NodeId {
         let id = NodeId(self.nodes.len());
@@ -342,6 +342,19 @@ impl<'fs> IFileSystem<'fs> for ReffFs {
             .collect()
     }
 
+    fn create_link(
+        &mut self, path: Self::Path<'fs>, target: Self::Path<'fs>,
+    ) -> Result<(), ReffFsError> {
+        let target = self.traverse_id(target)?;
+        let (parent, name) = path
+            .clone()
+            .parent()
+            .ok_or(FileSystemError::OperateOnRoot)?;
+        let parent = self.traverse_dir_mut(parent)?;
+        parent.insert(name.to_string(), target);
+        Ok(())
+    }
+
     fn remove(&mut self, path: Self::Path<'fs>) -> Result<(), ReffFsError> {
         let (parent, name) = path
             .clone()
@@ -356,19 +369,6 @@ impl<'fs> IFileSystem<'fs> for ReffFs {
             Err(FileSystemError::RemoveNonEmptyDir(path.clone()))?
         }
         self[dir].dir_mut(path.clone())?.remove(&name.to_string());
-        Ok(())
-    }
-
-    fn create_link(
-        &mut self, path: Self::Path<'fs>, target: Self::Path<'fs>,
-    ) -> Result<(), ReffFsError> {
-        let target = self.traverse_id(target)?;
-        let (parent, name) = path
-            .clone()
-            .parent()
-            .ok_or(FileSystemError::OperateOnRoot)?;
-        let parent = self.traverse_dir_mut(parent)?;
-        parent.insert(name.to_string(), target);
         Ok(())
     }
 }
