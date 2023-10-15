@@ -131,18 +131,29 @@ impl Display for FsPath {
     }
 }
 
-impl TryFrom<String> for FsPath {
+impl TryFrom<&str> for FsPath {
     type Error = FileSystemError<Self>;
 
-    fn try_from(raw: String) -> Result<Self, Self::Error> {
+    fn try_from(raw: &str) -> Result<Self, Self::Error> {
         if !raw.starts_with('/') {
             Err(FileSystemError::PathStartingWithoutSlash)?
+        }
+        if raw == "/" {
+            return Ok(Self(vec![]));
         }
         let path = raw[1..]
             .split('/')
             .map(FileName::new)
             .collect::<Result<Vec<_>, _>>()?;
         Ok(Self(path))
+    }
+}
+
+impl TryFrom<String> for FsPath {
+    type Error = FileSystemError<Self>;
+
+    fn try_from(raw: String) -> Result<Self, Self::Error> {
+        Self::try_from(raw.as_str())
     }
 }
 
