@@ -187,18 +187,34 @@ impl<'p> IPath<'p> for FsPath {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct Data(Vec<u8>);
+
+impl Display for Data {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut data = String::new();
+        for byte in &self.0 {
+            data += &format!("{:02x}", byte);
+        }
+        write!(f, "{}", data)
+    }
+}
+
+impl Data {
+    pub fn new(raw: impl AsRef<[u8]>) -> Self {
+        Self(raw.as_ref().to_vec())
+    }
+}
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct NodeId(usize);
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Node {
     // cnt: usize,
     inner: NodeInner,
 }
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum NodeInner {
     File(Data),
     Dir(HashMap<String, NodeId>),
@@ -379,8 +395,10 @@ impl<'fs> IFileSystem<'fs> for ReffFs {
             .dir(path.clone())?
             .get(&name.to_string())
             .ok_or(FileSystemError::FileNotInDir(path.clone()))?;
-        if !self[node].dir(path.clone())?.is_empty() {
-            Err(FileSystemError::RemoveNonEmptyDir(path.clone()))?
+        if let Ok(dir) = self[node].dir(path.clone()) {
+            if !dir.is_empty() {
+                Err(FileSystemError::RemoveNonEmptyDir(path.clone()))?
+            }
         }
         self[dir].dir_mut(path.clone())?.remove(&name.to_string());
         Ok(())
