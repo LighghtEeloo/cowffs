@@ -18,24 +18,28 @@ pub struct FileSys {
 }
 
 impl FileSys {
-    pub fn fs_new_blocks() -> Vec<Block> {
+    fn fs_new_blocks() -> Vec<Block> {
         vec![Block::INode(INode {
             ref_cnt: 1,
             children: vec![],
         })]
     }
-    pub fn fs_read_or_create(instance: PathBuf) -> anyhow::Result<FileSys> {
-        let blocks = match std::fs::read_to_string(&instance) {
-            Ok(s) => serde_json::from_str(&s)?,
-            Err(_) => FileSys::fs_new_blocks(),
-        };
+    fn fs_disk_init_with_blocks(instance: PathBuf, blocks: Vec<Block>) -> anyhow::Result<FileSys> {
         let blocks = blocks
             .into_iter()
             .map(|block| Arc::new(RwLock::new(block)))
             .collect::<Vec<_>>();
         Ok(FileSys { instance, blocks })
     }
-    pub fn fs_write(&self) -> anyhow::Result<()> {
+    pub fn fs_disk_init(instance: PathBuf) -> anyhow::Result<FileSys> {
+        let blocks = FileSys::fs_new_blocks();
+        Self::fs_disk_init_with_blocks(instance, blocks)
+    }
+    pub fn fs_disk_load(instance: PathBuf) -> anyhow::Result<FileSys> {
+        let blocks: Vec<_> = serde_json::from_str(&std::fs::read_to_string(&instance)?)?;
+        Self::fs_disk_init_with_blocks(instance, blocks)
+    }
+    pub fn fs_disk_dump(&self) -> anyhow::Result<()> {
         let blocks = self
             .blocks
             .iter()

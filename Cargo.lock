@@ -18,6 +18,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "interface"
+version = "0.1.0"
+dependencies = [
+ "thiserror",
+]
+
+[[package]]
 name = "itoa"
 version = "1.0.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -45,6 +52,7 @@ dependencies = [
 name = "refffs"
 version = "0.1.0"
 dependencies = [
+ "interface",
  "thiserror",
 ]
 
@@ -83,6 +91,13 @@ dependencies = [
  "itoa",
  "ryu",
  "serde",
+]
+
+[[package]]
+name = "spec"
+version = "0.1.0"
+dependencies = [
+ "thiserror",
 ]
 
 [[package]]
