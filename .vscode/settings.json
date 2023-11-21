@@ -1,4 +1,4 @@
 {
-    "files.autoSave": "afterDelay",
-    "github.copilot.editor.enableCodeActions": false
+    "files.autoSave": "onFocusChange",
+    "github.copilot.editor.enableCodeActions": false,
 }
