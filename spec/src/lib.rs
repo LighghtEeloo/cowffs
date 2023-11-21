@@ -65,6 +65,44 @@ state_machine! {
         }
 
         transition! {
+            write_file_op(path: Path, idx: Seq<usize>) {
+                update metadata = pre.metadata.insert(path, Some(MetaData {
+                    idx: idx, typ: MetaType::File,
+                }));
+            }
+        }
+
+        transition! {
+            create_dir_op(path: Path) {
+                update metadata = pre.metadata.insert(path, Some(MetaData {
+                    idx: Seq::new(0, |i| 0), typ: MetaType::Dir,
+                }));
+            }
+        }
+
+        transition! {
+            read_dir_op(path: Path, idx: Seq<usize>) {
+                require(pre.metadata.contains_pair(path, Some(MetaData {
+                    idx, typ: MetaType::Dir,
+                })));
+            }
+        }
+
+        transition! {
+            create_link_op(path: Path, idx: usize) {
+                update metadata = pre.metadata.insert(path, Some(MetaData {
+                    idx: Seq::new(1, |i| idx), typ: MetaType::Link,
+                }));
+            }
+        }
+
+        transition! {
+            remove_op(path: Path) {
+                update metadata = pre.metadata.insert(path, None);
+            }
+        }
+
+        transition! {
             noop() {
             }
         }
