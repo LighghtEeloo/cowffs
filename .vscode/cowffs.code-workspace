@@ -1,0 +1,13 @@
+{
+	"folders": [
+		{
+			"path": ".."
+		}
+	],
+	"settings": {
+		"rust-analyzer.server.path": "/Users/Artemis/Box/Repo/verus-analyzer/dist/verus-analyzer-aarch64-apple-darwin",
+		"rust-analyzer.checkOnSave": false,
+		"files.autoSave": "onFocusChange",
+		"github.copilot.editor.enableCodeActions": false,
+	}
+}

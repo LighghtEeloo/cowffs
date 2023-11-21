@@ -72,7 +72,7 @@ state_machine! {
 }
 
 state_machine! {
-    ShardedKVProtocol {
+    ShardedFileSysProtocol {
         fields {
             pub thread_cnt: int,
             pub maps: Seq<Map<Path, Option<MetaData>>>,
