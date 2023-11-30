@@ -116,6 +116,15 @@ impl Data {
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct DirEntries<Ptr>(HashMap<String, Ptr>);
+
+impl<Ptr> DirEntries<Ptr> {
+    pub fn new() -> Self {
+        Self(HashMap::new())
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct NodeId(usize);
 
@@ -127,7 +136,7 @@ pub struct Node {
 #[derive(Clone, Debug)]
 pub enum NodeInner {
     File(Data),
-    Dir(HashMap<String, NodeId>),
+    Dir(DirEntries<NodeId>),
 }
 
 impl Node {
@@ -140,13 +149,13 @@ impl Node {
     pub fn dir(&self, path: FsPath) -> Result<&HashMap<String, NodeId>, ReffFsError> {
         match &self.inner {
             NodeInner::File(_) => Err(FileSystemError::IndexOnFile(path)),
-            NodeInner::Dir(children) => Ok(children),
+            NodeInner::Dir(children) => Ok(&children.0),
         }
     }
     pub fn dir_mut(&mut self, path: FsPath) -> Result<&mut HashMap<String, NodeId>, ReffFsError> {
         match &mut self.inner {
             NodeInner::File(_) => Err(FileSystemError::IndexOnFile(path)),
-            NodeInner::Dir(children) => Ok(children),
+            NodeInner::Dir(children) => Ok(&mut children.0),
         }
     }
     pub fn file(&self, path: FsPath) -> Result<&Data, ReffFsError> {
@@ -173,12 +182,12 @@ impl IMeta for Node {
     }
 }
 
-pub struct ReffFs {
+pub struct FileSystem {
     pub nodes: Vec<Node>,
     pub root: NodeId,
 }
 
-impl std::ops::Index<NodeId> for ReffFs {
+impl std::ops::Index<NodeId> for FileSystem {
     type Output = Node;
 
     fn index(&self, index: NodeId) -> &Self::Output {
@@ -186,13 +195,13 @@ impl std::ops::Index<NodeId> for ReffFs {
     }
 }
 
-impl std::ops::IndexMut<NodeId> for ReffFs {
+impl std::ops::IndexMut<NodeId> for FileSystem {
     fn index_mut(&mut self, index: NodeId) -> &mut Self::Output {
         &mut self.nodes[index.0]
     }
 }
 
-impl ReffFs {
+impl FileSystem {
     pub fn traverse(&self, path: FsPath) -> Result<&Node, ReffFsError> {
         let node = self.traverse_id(path)?;
         Ok(&self[node])
@@ -219,7 +228,7 @@ impl ReffFs {
     }
 }
 
-impl<'fs> IFileSystem<'fs> for ReffFs {
+impl<'fs> IFileSystem<'fs> for FileSystem {
     type Path<'p> = FsPath;
 
     type Meta = Node;
@@ -227,7 +236,7 @@ impl<'fs> IFileSystem<'fs> for ReffFs {
     type Data = Data;
 
     fn init() -> Self {
-        let nodes = vec![Node::with_inner(NodeInner::Dir(HashMap::new()))];
+        let nodes = vec![Node::with_inner(NodeInner::Dir(DirEntries::new()))];
         let root = NodeId(0);
         Self { nodes, root }
     }
@@ -262,7 +271,7 @@ impl<'fs> IFileSystem<'fs> for ReffFs {
 
     fn create_dir(&mut self, path: Self::Path<'fs>) -> Result<(), ReffFsError> {
         let (parent, name) = path.parent().ok_or(FileSystemError::OperateOnRoot)?;
-        let new_dir = self.fresh(Node::with_inner(NodeInner::Dir(HashMap::new())));
+        let new_dir = self.fresh(Node::with_inner(NodeInner::Dir(DirEntries::new())));
         let dir = self.traverse_dir_mut(parent)?;
         dir.insert(name.to_string(), new_dir);
         Ok(())

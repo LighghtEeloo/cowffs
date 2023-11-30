@@ -1,7 +1,7 @@
 use refffs::*;
 
 fn main() -> Result<(), FileSystemError<FsPath>> {
-    let mut fs = ReffFs::init();
+    let mut fs = FileSystem::init();
     fs.create_file(FsPath::try_from("/a.txt")?)?;
     fs.create_file(FsPath::try_from("/b.txt")?)?;
     fs.create_dir(FsPath::try_from("/c")?)?;
