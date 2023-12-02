@@ -3,18 +3,22 @@
 use dashmap::DashMap;
 use refffs::{Data, DirEntries};
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     io,
-    sync::{Arc, RwLock},
+    sync::{Arc, RwLock, mpsc},
     thread,
 };
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct BlockPtr(usize);
 
+#[derive(Clone, Debug)]
 pub enum Block {
     Data(Data),
     Dir(DirEntries<BlockPtr>),
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct WorkerId(usize);
 
 pub struct Worker {
@@ -22,16 +26,20 @@ pub struct Worker {
 }
 
 pub struct FileSystem {
+    shards: Vec<HashSet<BlockPtr>>,
     // workers: Vec<Worker>,
 }
 
 impl FileSystem {
     pub fn new(worker_num: usize) -> io::Result<Self> {
         let t = thread::Builder::new().name("worker".to_string()).spawn(|| {
-            let shard = HashMap::new();
-            let worker = Worker { shard };
+            let worker = Worker {
+                shard: Default::default(),
+            };
         })?;
 
-        Ok(Self {})
+        Ok(Self {
+            shards: Default::default(),
+        })
     }
 }
